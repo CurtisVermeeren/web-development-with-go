@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Test Hello</title>
+</head>
+<body>
+	<h1>Hello, {{.Name}}</h1>
+
+	<p>It is currently {{.Date.Format "Jan 02 2006"}}</p>
+
+	<h2>This weeks chores are:</h2>
+
+	{{range $key, $value := .Agenda}}
+		<li>{{$key}}: {{$value}}</li>
+	{{end}}
+
+	{{if eq .Money 0}}
+		<p>There is money in the banana stand</p>
+	{{ else if eq .Money 1}}
+		<p>We're rich now!</p>
+	{{ else if gt .Money 1}}
+		<p>So much stinkin Moneyyyyyy!</p>
+	{{end}}
+</body>
+</html>
