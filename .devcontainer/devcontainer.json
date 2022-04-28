@@ -19,7 +19,9 @@
 	"workspaceFolder": "/app",
 
 	// Set *default* container specific settings.json values on container create.
-	"settings": {},
+	"settings": {
+		"terminal.integated.shell.*": "/bin/zsh"
+	},
 
 	// Add the IDs of extensions you want installed when the container is created.
 	"extensions": [
