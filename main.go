@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/curtisvermeeren/web-development-with-go/views"
@@ -11,35 +9,37 @@ import (
 
 var homeView *views.View
 var contactView *views.View
+var faqView *views.View
 
 func home(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
-
-	err := homeView.Template.Execute(w, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
+	must(homeView.Render(w, nil))
 }
 
 func contact(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
-	err := contactView.Template.Execute(w, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
+	must(contactView.Render(w, nil))
 }
 
 func faq(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
-	fmt.Fprintf(w, "<h1>FAQ</h1><ul><li>Is this good? Yes!</li><li>How long is this here? For now.</li><li>Is this mysterious? Perhaps.</li></ul>")
+	must(faqView.Render(w, nil))
+}
+
+// must is a helper function that panics when an error is reached
+func must(err error) {
+	if err != nil {
+		panic((err))
+	}
 }
 
 func main() {
 	router := mux.NewRouter()
 
 	// Setup views
-	homeView = views.NewView("views/home.gohtml")
-	contactView = views.NewView("views/contact.gohtml")
+	homeView = views.NewView("bootstrap", "views/home.gohtml")
+	contactView = views.NewView("bootstrap", "views/contact.gohtml")
+	faqView = views.NewView("bootstrap", "views/faq.gohtml")
 
 	// Setup routes
 	router.HandleFunc("/", home)
