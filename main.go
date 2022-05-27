@@ -3,28 +3,9 @@ package main
 import (
 	"net/http"
 
-	"github.com/curtisvermeeren/web-development-with-go/views"
+	"github.com/curtisvermeeren/web-development-with-go/controllers"
 	"github.com/gorilla/mux"
 )
-
-var homeView *views.View
-var contactView *views.View
-var faqView *views.View
-
-func home(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html")
-	must(homeView.Render(w, nil))
-}
-
-func contact(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html")
-	must(contactView.Render(w, nil))
-}
-
-func faq(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html")
-	must(faqView.Render(w, nil))
-}
 
 // must is a helper function that panics when an error is reached
 func must(err error) {
@@ -33,21 +14,23 @@ func must(err error) {
 	}
 }
 
+func NotFound(w http.ResponseWriter, r *http.Request) {}
+
 func main() {
 	router := mux.NewRouter()
 
-	// Setup views
-	homeView = views.NewView("bootstrap", "views/home.gohtml")
-	contactView = views.NewView("bootstrap", "views/contact.gohtml")
-	faqView = views.NewView("bootstrap", "views/faq.gohtml")
+	// Setup Controlelrs
+	staticController := controllers.NewStatic()
+	usersController := controllers.NewUsers()
 
 	// Setup routes
-	router.HandleFunc("/", home)
-	router.HandleFunc("/contact", contact)
-	router.HandleFunc("/faq", faq)
+	router.Handle("/", staticController.Home).Methods("GET")
+	router.Handle("/contact", staticController.Contact).Methods("GET")
+	router.Handle("/faq", staticController.Faq).Methods("GET")
+	router.HandleFunc("/signup", usersController.New).Methods("GET")
+	router.HandleFunc("/signup", usersController.Create).Methods("POST")
 
-	// Handle route not found
-	router.NotFoundHandler = http.HandlerFunc(home)
+	router.NotFoundHandler = staticController.Home
 
 	http.ListenAndServe(":3000", router)
 
