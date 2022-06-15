@@ -20,8 +20,6 @@
 
 	// Set *default* container specific settings.json values on container create.
 	"settings": {
-		"terminal.integrated.shell.linux": "/usr/bin/zsh",
-		"terminal.integrated.automationShell.linux": "/usr/bin/zsh",
 		"terminal.integrated.profiles.linux": {
 			"bash": {
 				"path": "bash",
@@ -29,21 +27,10 @@
 			},
 			"zsh": {
 				"path": "zsh"
-			},
-			"fish": {
-				"path": "fish"
-			},
-			"tmux": {
-				"path": "tmux",
-				"icon": "terminal-tmux"
-			},
-			"pwsh": {
-				"path": "pwsh",
-				"icon": "terminal-powershell"
 			}
-		}
+		},
+		"terminal.integrated.defaultProfile.linux": "zsh"
 	},
-
 	// Add the IDs of extensions you want installed when the container is created.
 	"extensions": [
 		"golang.go"

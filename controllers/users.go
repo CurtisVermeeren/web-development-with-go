@@ -2,25 +2,30 @@ package controllers
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 
+	"github.com/curtisvermeeren/web-development-with-go/models"
 	"github.com/curtisvermeeren/web-development-with-go/views"
 )
 
 type Users struct {
 	NewView *views.View
+	us      *models.UserService
 }
 
 // SignupForm represents the input fields of the sign up form page
 type SignupForm struct {
-	Email    string `schema: "email"`
-	Password string `schema: "password"`
+	Name     string `schema:"name"`
+	Email    string `schema:"email"`
+	Password string `schema:"password"`
 }
 
 // NewUsers creates and returns a Users object
-func NewUsers() *Users {
+func NewUsers(us *models.UserService) *Users {
 	return &Users{
 		NewView: views.NewView("bootstrap", "users/new"),
+		us:      us,
 	}
 }
 
@@ -38,11 +43,19 @@ func (u *Users) New(w http.ResponseWriter, r *http.Request) {
 func (u *Users) Create(w http.ResponseWriter, r *http.Request) {
 
 	var form SignupForm
-	err := parseForm(r, &form)
-	if err != nil {
-		panic(err)
+	if err := parseForm(r, &form); err != nil {
+		log.Fatal(err)
 	}
 
-	fmt.Fprintln(w, "Email is", form.Email)
-	fmt.Fprintln(w, "Password is", form.Password)
+	user := models.User{
+		Name:  form.Name,
+		Email: form.Email,
+	}
+
+	if err := u.us.Create(&user); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Fprintln(w, "User is", user)
 }

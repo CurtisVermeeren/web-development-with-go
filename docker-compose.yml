@@ -3,9 +3,23 @@ services:
   go-app:
     container_name: web-development-with-go
     build: .
+    env_file:
+      - database.env # Configure postgres
     volumes:
       - .:/app:cached
     ports:
       - 8080:8080
     command: /bin/sh -c "while sleep 1000; do :; done"
+  db:
+    image: postgres:14.3-alpine
+    restart: always
+    env_file:
+      - database.env # Configure postgres
+    ports:
+     - '5432:5432'
+    volumes: 
+      - database-data:/var/lib/postgresql/data
+
+volumes:
+  database-data: # Named volume 
     
