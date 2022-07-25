@@ -5,6 +5,7 @@ services:
     build: .
     env_file:
       - database.env # Configure postgres
+      - .env
     volumes:
       - .:/app:cached
     ports:

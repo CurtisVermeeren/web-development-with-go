@@ -3,9 +3,11 @@ package models
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/postgres"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var (
@@ -13,7 +15,12 @@ var (
 	ErrNotFound = errors.New("models: resource not found")
 	// ErrInvalidID is returned whan an invalid ID is passed to a method
 	ErrInvalidID = errors.New("models: ID provided was invalid")
+	// ErrInvalidPassword is returned when an invalid password is used when attempting to authenticate a user
+	ErrInvalidPassword = errors.New("models: incorrect password provided")
 )
+
+// Password pepper for the application
+var userPasswordPepper = os.Getenv("PASSWORDPEPPER")
 
 // UserService is used as an abstraction layer to the database
 type UserService struct {
@@ -40,8 +47,10 @@ func (us *UserService) Close() error {
 
 type User struct {
 	gorm.Model
-	Name  string
-	Email string `gorm:"not null;unique_index"`
+	Name         string
+	Email        string `gorm:"not null;unique_index"`
+	Password     string `gorm:"-"`
+	PasswordHash string `gorm:"not null"`
 }
 
 // ByID is used to find a user with matching ID
@@ -70,6 +79,16 @@ func (us *UserService) ByEmail(email string) (*User, error) {
 
 // Create is used to add a user to the database
 func (us *UserService) Create(user *User) error {
+	// Add pepper to users pasword
+	pwBytes := []byte(user.Password + userPasswordPepper)
+	// GenerateFromPassword returns a salted hash
+	hashedBytes, err := bcrypt.GenerateFromPassword(
+		pwBytes, bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	user.PasswordHash = string(hashedBytes)
+	user.Password = ""
 	return us.db.Create(user).Error
 }
 
@@ -113,4 +132,34 @@ func first(db *gorm.DB, dst interface{}) error {
 		return ErrNotFound
 	}
 	return err
+}
+
+/*
+Authenticate is used to authenticate a user with the provided emial address and password.
+Returns ErrNoFound if the email provided is invalid.
+Returns ErrInvalidPassword if the password provided is invalid.
+Returns the user if both password and email are valid.
+*/
+func (us *UserService) Authenticate(email, password string) (*User, error) {
+	// Check for user with matching email
+	foundUser, err := us.ByEmail(email)
+	if err != nil {
+		return nil, err
+	}
+
+	// Compare the users hashed password to the provided password
+	err = bcrypt.CompareHashAndPassword(
+		[]byte(foundUser.PasswordHash),
+		[]byte(password+userPasswordPepper),
+	)
+
+	// Check for errors when comparing passwords
+	switch err {
+	case nil:
+		return foundUser, nil
+	case bcrypt.ErrMismatchedHashAndPassword:
+		return nil, ErrInvalidPassword
+	default:
+		return nil, err
+	}
 }

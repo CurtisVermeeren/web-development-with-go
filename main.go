@@ -30,6 +30,9 @@ func main() {
 	}
 	defer userService.Close()
 
+	// Used to reset the DB in development
+	// userService.DestructiveReset()
+
 	// Create the database schema
 	userService.AutoMigrate()
 
@@ -40,12 +43,16 @@ func main() {
 	staticController := controllers.NewStatic()
 	usersController := controllers.NewUsers(userService)
 
-	// Setup routes
+	// Page routes
 	router.Handle("/", staticController.Home).Methods("GET")
 	router.Handle("/contact", staticController.Contact).Methods("GET")
 	router.Handle("/faq", staticController.Faq).Methods("GET")
+	// Signup routes
 	router.HandleFunc("/signup", usersController.New).Methods("GET")
 	router.HandleFunc("/signup", usersController.Create).Methods("POST")
+	// Login routes
+	router.Handle("/login", usersController.LoginView).Methods("GET")
+	router.HandleFunc("/login", usersController.Login).Methods("POST")
 
 	router.NotFoundHandler = staticController.Home
 
