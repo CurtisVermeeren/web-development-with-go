@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/curtisvermeeren/web-development-with-go/hash"
+	"github.com/curtisvermeeren/web-development-with-go/rand"
 	"github.com/jinzhu/gorm"
 	_ "github.com/jinzhu/gorm/dialects/postgres"
 	"golang.org/x/crypto/bcrypt"
@@ -24,8 +26,11 @@ var userPasswordPepper = os.Getenv("PASSWORDPEPPER")
 
 // UserService is used as an abstraction layer to the database
 type UserService struct {
-	db *gorm.DB
+	db   *gorm.DB
+	hmac hash.HMAC
 }
+
+var hmacSecretKey = os.Getenv("SECRETHMACKEY")
 
 // NewUserService creates a UserServiceObject using a database connectionInfo string
 func NewUserService(connectionInfo string) (*UserService, error) {
@@ -33,10 +38,17 @@ func NewUserService(connectionInfo string) (*UserService, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot create UserService: %w", err)
 	}
+
 	// Enable Gorm logging to show statments used
 	db.LogMode(true)
+
+	// Set HMAC for hashing
+	hmac := hash.NewHMAC(hmacSecretKey)
+
+	// Return new UserService
 	return &UserService{
-		db: db,
+		db:   db,
+		hmac: hmac,
 	}, nil
 }
 
@@ -51,6 +63,8 @@ type User struct {
 	Email        string `gorm:"not null;unique_index"`
 	Password     string `gorm:"-"`
 	PasswordHash string `gorm:"not null"`
+	Remember     string `gorm:"-"`
+	RememberHash string `gorm:"not null;unique_index"`
 }
 
 // ByID is used to find a user with matching ID
@@ -77,6 +91,19 @@ func (us *UserService) ByEmail(email string) (*User, error) {
 	return &user, nil
 }
 
+// ByRemember is used to find a user with a matching remember token
+// will return ErrNotFound if no matching user is found
+func (us *UserService) ByRemember(token string) (*User, error) {
+	var user User
+	rememberHash := us.hmac.Hash(token)
+	// Search for the first user where remember_hash matches
+	err := first(us.db.Where("remember_hash = ?", rememberHash), &user)
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
 // Create is used to add a user to the database
 func (us *UserService) Create(user *User) error {
 	// Add pepper to users pasword
@@ -89,11 +116,27 @@ func (us *UserService) Create(user *User) error {
 	}
 	user.PasswordHash = string(hashedBytes)
 	user.Password = ""
+
+	// Set a remember token for the new user
+	if user.Remember == "" {
+		token, err := rand.RememberToken()
+		if err != nil {
+			return err
+		}
+		user.Remember = token
+	}
+
+	// Hash the remember token and store it on the user
+	user.RememberHash = us.hmac.Hash(user.Remember)
+
 	return us.db.Create(user).Error
 }
 
 // Update is used to update the provided user with all data in the provided user
 func (us *UserService) Update(user *User) error {
+	if user.Remember != "" {
+		user.RememberHash = us.hmac.Hash(user.Remember)
+	}
 	return us.db.Save(user).Error
 }
 

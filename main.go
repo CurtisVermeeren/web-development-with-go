@@ -47,6 +47,7 @@ func main() {
 	router.Handle("/", staticController.Home).Methods("GET")
 	router.Handle("/contact", staticController.Contact).Methods("GET")
 	router.Handle("/faq", staticController.Faq).Methods("GET")
+	router.HandleFunc("/cookietest", usersController.CookieTest).Methods("GET")
 	// Signup routes
 	router.HandleFunc("/signup", usersController.New).Methods("GET")
 	router.HandleFunc("/signup", usersController.Create).Methods("POST")
