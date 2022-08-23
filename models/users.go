@@ -1,9 +1,23 @@
 package models
 
+/*
+UserService is an interface to manipulate the user model. It is the entrypoint to the user model.
+UserService contains UserDB layers.
+The UserService layers are nested so that: userService contains userValidator -> userValidator contains userGorm -> userGorm contains a hash instance and db connection.
+
+UserDB is an interface describing methods needed to interact with the user model.
+
+userValidator is a struct that is used for validating and normalizing data before database entry.
+
+userGorm is a struct that is used for interacting directly with the database.
+*/
+
 import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
+	"strings"
 
 	"github.com/curtisvermeeren/web-development-with-go/hash"
 	"github.com/curtisvermeeren/web-development-with-go/rand"
@@ -15,46 +29,55 @@ import (
 var (
 	// ErrNotFound is returned when a resource cannot be found in the database
 	ErrNotFound = errors.New("models: resource not found")
-	// ErrInvalidID is returned whan an invalid ID is passed to a method
-	ErrInvalidID = errors.New("models: ID provided was invalid")
-	// ErrInvalidPassword is returned when an invalid password is used when attempting to authenticate a user
-	ErrInvalidPassword = errors.New("models: incorrect password provided")
+	// ErrIDInvalid is returned whan an invalid ID is passed to a method
+	ErrIDInvalid = errors.New("models: ID provided was invalid")
+	// ErrPasswordIncorrect is returned when an invalid password is used when attempting to authenticate a user
+	ErrPasswordIncorrect = errors.New("models: incorrect password provided")
+	// ErrEmailRequired is returned when an email address is not provided when creating a user
+	ErrEmailRequired = errors.New("models: email address is required")
+	// ErrEmailInvalid is returned when an email address does not match requirements
+	ErrEmailInvalid = errors.New("models: email address is not valid")
+	// ErrEmailTaken is returned when an update or create is attempted on an email that already exists
+	ErrEmailTaken = errors.New("models: email addess is already taken")
+	// ErrPasswordTooShort is returned when a password doesn't meet a minimum length
+	ErrPasswordTooShort = errors.New("models: password must be at least 8 character long")
+	// ErrPasswordRequired is returned whan a create is attempted without a user password provided
+	ErrPasswordRequired = errors.New("models: password is required")
+
+	// ErrRememberRequired is returned when a create or update is attemepted without a user remeber token hash
+	ErrRememberRequired = errors.New("models: remember token is required")
+	// ErrRememberTooShort is returned when a remember token is not at least 32 bytes
+	ErrRememberTooShort = errors.New("models: remember token must be at least 32 bytes")
 )
+
+// Get the hmacSecretKey from env
+var hmacSecretKey = os.Getenv("SECRETHMACKEY")
 
 // Password pepper for the application
 var userPasswordPepper = os.Getenv("PASSWORDPEPPER")
 
-// UserService is used as an abstraction layer to the database
-type UserService struct {
-	db   *gorm.DB
-	hmac hash.HMAC
+// UserService is a set of methods used to manipulate and work with the user model
+type UserService interface {
+	Authenticate(email, password string) (*User, error)
+	UserDB
 }
 
-var hmacSecretKey = os.Getenv("SECRETHMACKEY")
+// UserService is used as an abstraction layer to the database
+type userService struct {
+	UserDB
+}
 
 // NewUserService creates a UserServiceObject using a database connectionInfo string
-func NewUserService(connectionInfo string) (*UserService, error) {
-	db, err := gorm.Open("postgres", connectionInfo)
+func NewUserService(connectionInfo string) (UserService, error) {
+	ug, err := newUserGorm(connectionInfo)
 	if err != nil {
-		return nil, fmt.Errorf("cannot create UserService: %w", err)
+		return nil, err
 	}
-
-	// Enable Gorm logging to show statments used
-	db.LogMode(true)
-
-	// Set HMAC for hashing
 	hmac := hash.NewHMAC(hmacSecretKey)
-
-	// Return new UserService
-	return &UserService{
-		db:   db,
-		hmac: hmac,
+	uv := newUserValidator(ug, hmac)
+	return &userService{
+		UserDB: uv,
 	}, nil
-}
-
-// Close is used to close the database connection of a UserService
-func (us *UserService) Close() error {
-	return us.db.Close()
 }
 
 type User struct {
@@ -67,23 +90,98 @@ type User struct {
 	RememberHash string `gorm:"not null;unique_index"`
 }
 
+// UserDB defines methods used to interact with the users database
+type UserDB interface {
+	// Methods for querying a single user
+	ByID(id uint) (*User, error)
+	ByEmail(email string) (*User, error)
+	ByRemember(token string) (*User, error)
+
+	// Methods for altering users
+	Create(user *User) error
+	Update(user *User) error
+	Delete(id uint) error
+
+	// Used to close a db connection
+	Close() error
+
+	// Database migration helpers
+	AutoMigrate() error
+	DestructiveReset() error
+}
+
+// userGorm represents the database interaction layer
+type userGorm struct {
+	db *gorm.DB
+}
+
+// newUserGorm creates a new gorm layer
+func newUserGorm(connectionInfo string) (*userGorm, error) {
+	db, err := gorm.Open("postgres", connectionInfo)
+	if err != nil {
+		return nil, fmt.Errorf("cannot create UserService: %w", err)
+	}
+
+	// Enable Gorm logging to show statments used
+	db.LogMode(true)
+
+	// Return new UserService
+	return &userGorm{
+		db: db,
+	}, nil
+}
+
+// userValidator represents the data validation and normalization layer
+type userValidator struct {
+	UserDB
+	hmac       hash.HMAC
+	emailRegex *regexp.Regexp
+}
+
+// newUserValidator returns a userValidator object
+func newUserValidator(udb UserDB, hmac hash.HMAC) *userValidator {
+	return &userValidator{
+		UserDB:     udb,
+		hmac:       hmac,
+		emailRegex: regexp.MustCompile(`^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,16}$`),
+	}
+}
+
+// userValFn type defines what is expected of a user validation function
+// having all validation functions of this type allow them to be ren sequentially.
+type userValFn func(*User) error
+
 // ByID is used to find a user with matching ID
 // will return ErrNotFound if no matching user is found
-func (us *UserService) ByID(id uint) (*User, error) {
+func (ug *userGorm) ByID(id uint) (*User, error) {
 	var user User
-	db := us.db.Where("id = ?", id)
+	db := ug.db.Where("id = ?", id)
 	err := first(db, &user)
 	if err != nil {
 		return nil, err
 	}
 	return &user, nil
+}
+
+// ByEmail will normalize an email adreess before passing it to the next layer for querying
+func (uv *userValidator) ByEmail(email string) (*User, error) {
+	user := User{
+		Email: email,
+	}
+
+	err := runUserValFns(&user, uv.normalizeEmail)
+	if err != nil {
+		return nil, err
+	}
+
+	return uv.UserDB.ByEmail(user.Email)
 }
 
 // ByEmail is used to find a user with matching Email
 // will return ErrNotFound if no matching user is found
-func (us *UserService) ByEmail(email string) (*User, error) {
+func (ug *userGorm) ByEmail(email string) (*User, error) {
 	var user User
-	db := us.db.Where("email = ?", email)
+	db := ug.db.Where("email = ?", email)
 	err := first(db, &user)
 	if err != nil {
 		return nil, err
@@ -91,77 +189,127 @@ func (us *UserService) ByEmail(email string) (*User, error) {
 	return &user, nil
 }
 
+// ByRemember will hash the remember token then call ByRemember on the subsuquent UserDB layer
+func (uv *userValidator) ByRemember(token string) (*User, error) {
+	// Set the remember token on a user then hash it
+	user := User{
+		Remember: token,
+	}
+	if err := runUserValFns(&user, uv.hmacRemember); err != nil {
+		return nil, err
+	}
+
+	// Set the hash and pass that to the next layer
+	return uv.UserDB.ByRemember(user.RememberHash)
+}
+
 // ByRemember is used to find a user with a matching remember token
 // will return ErrNotFound if no matching user is found
-func (us *UserService) ByRemember(token string) (*User, error) {
+// the method expects the token to already be hashed
+func (ug *userGorm) ByRemember(rememberHash string) (*User, error) {
 	var user User
-	rememberHash := us.hmac.Hash(token)
 	// Search for the first user where remember_hash matches
-	err := first(us.db.Where("remember_hash = ?", rememberHash), &user)
+	err := first(ug.db.Where("remember_hash = ?", rememberHash), &user)
 	if err != nil {
 		return nil, err
 	}
 	return &user, nil
 }
 
+// Close is used to close the database connection of a UserService
+func (ug *userGorm) Close() error {
+	return ug.db.Close()
+}
+
+// Create will create the provided user
+func (uv *userValidator) Create(user *User) error {
+
+	// Run validation on the new user. bcrypt hash the password, set the remember token, hash the remember token
+	err := runUserValFns(user,
+		uv.passwordRequired,
+		uv.passwordMinLength,
+		uv.bcryptPassword,
+		uv.passwordHashRequried,
+		uv.setRememberIfUnset,
+		uv.rememberMinBytes,
+		uv.hmacRemember,
+		uv.rememberHashRequired,
+		uv.normalizeEmail,
+		uv.requireEmail,
+		uv.emailFormat,
+		uv.emailIsAvail)
+	if err != nil {
+		return nil
+	}
+
+	// Pass the user to the next layer
+	return uv.UserDB.Create(user)
+}
+
 // Create is used to add a user to the database
-func (us *UserService) Create(user *User) error {
-	// Add pepper to users pasword
-	pwBytes := []byte(user.Password + userPasswordPepper)
-	// GenerateFromPassword returns a salted hash
-	hashedBytes, err := bcrypt.GenerateFromPassword(
-		pwBytes, bcrypt.DefaultCost)
+func (ug *userGorm) Create(user *User) error {
+	// Add user to the database
+	return ug.db.Create(user).Error
+}
+
+// Update will hash a remember token is provided
+func (uv *userValidator) Update(user *User) error {
+	// Run validation on the new user. bcrypt hash the password, hash the remember token
+	err := runUserValFns(user,
+		uv.passwordMinLength,
+		uv.bcryptPassword,
+		uv.passwordHashRequried,
+		uv.rememberMinBytes,
+		uv.hmacRemember,
+		uv.rememberHashRequired,
+		uv.normalizeEmail,
+		uv.requireEmail,
+		uv.emailFormat,
+		uv.emailIsAvail)
 	if err != nil {
 		return err
 	}
-	user.PasswordHash = string(hashedBytes)
-	user.Password = ""
-
-	// Set a remember token for the new user
-	if user.Remember == "" {
-		token, err := rand.RememberToken()
-		if err != nil {
-			return err
-		}
-		user.Remember = token
-	}
-
-	// Hash the remember token and store it on the user
-	user.RememberHash = us.hmac.Hash(user.Remember)
-
-	return us.db.Create(user).Error
+	// Pass the updated user to the next layer
+	return uv.UserDB.Update(user)
 }
 
 // Update is used to update the provided user with all data in the provided user
-func (us *UserService) Update(user *User) error {
-	if user.Remember != "" {
-		user.RememberHash = us.hmac.Hash(user.Remember)
-	}
-	return us.db.Save(user).Error
+func (ug *userGorm) Update(user *User) error {
+	return ug.db.Save(user).Error
 }
 
-// Delete is used to remove a user matching the provided id
-func (us *UserService) Delete(id uint) error {
-	if id == 0 {
-		return ErrInvalidID
-	}
-	// Create a user with the id matching the one to be deleted
-	user := User{Model: gorm.Model{ID: id}}
-	return us.db.Delete(&user).Error
-}
-
-// DestructiveReset drops the user table and rebuilds it
-func (us *UserService) DestructiveReset() error {
-	err := us.db.DropTableIfExists(&User{}).Error
+// Delete is used to delete the user with the provided ID
+func (uv *userValidator) Delete(id uint) error {
+	var user User
+	user.ID = id
+	// Check that the id of the delete user is greater than 0
+	err := runUserValFns(&user, uv.idGreaterThan(0))
 	if err != nil {
 		return err
 	}
-	return us.AutoMigrate()
+	// Pass the id of the user to be deleted to the next layer
+	return uv.UserDB.Delete(id)
+}
+
+// Delete is used to remove a user matching the provided ID
+func (ug *userGorm) Delete(id uint) error {
+	// Create a user with the id matching the one to be deleted
+	user := User{Model: gorm.Model{ID: id}}
+	return ug.db.Delete(&user).Error
+}
+
+// DestructiveReset drops the user table and rebuilds it
+func (ug *userGorm) DestructiveReset() error {
+	err := ug.db.DropTableIfExists(&User{}).Error
+	if err != nil {
+		return err
+	}
+	return ug.AutoMigrate()
 }
 
 // AutoMigrate is used to attempt to automatically migrate the user table
-func (us *UserService) AutoMigrate() error {
-	if err := us.db.AutoMigrate(&User{}).Error; err != nil {
+func (ug *userGorm) AutoMigrate() error {
+	if err := ug.db.AutoMigrate(&User{}).Error; err != nil {
 		return err
 	}
 	return nil
@@ -180,10 +328,10 @@ func first(db *gorm.DB, dst interface{}) error {
 /*
 Authenticate is used to authenticate a user with the provided emial address and password.
 Returns ErrNoFound if the email provided is invalid.
-Returns ErrInvalidPassword if the password provided is invalid.
+Returns ErrPasswordIncorrect if the password provided is invalid.
 Returns the user if both password and email are valid.
 */
-func (us *UserService) Authenticate(email, password string) (*User, error) {
+func (us *userService) Authenticate(email, password string) (*User, error) {
 	// Check for user with matching email
 	foundUser, err := us.ByEmail(email)
 	if err != nil {
@@ -201,8 +349,170 @@ func (us *UserService) Authenticate(email, password string) (*User, error) {
 	case nil:
 		return foundUser, nil
 	case bcrypt.ErrMismatchedHashAndPassword:
-		return nil, ErrInvalidPassword
+		return nil, ErrPasswordIncorrect
 	default:
 		return nil, err
 	}
+}
+
+// runUserValsFns runs a number of validation functions on user
+// returns an error if any of the validations fail
+func runUserValFns(user *User, fns ...userValFn) error {
+	for _, fn := range fns {
+		if err := fn(user); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// bcryptPassword is used to hash a user's password with an application wide pepper and bycrypt, which adds salt automatically
+func (uv *userValidator) bcryptPassword(user *User) error {
+
+	// If the password hasn't changed return without hashing
+	if user.Password == "" {
+		return nil
+	}
+
+	// Hash the users password with bcrypt
+	pwBytes := []byte(user.Password + userPasswordPepper)
+	hashedBytes, err := bcrypt.GenerateFromPassword(pwBytes, bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	user.PasswordHash = string(hashedBytes)
+	user.Password = ""
+	return nil
+}
+
+// hmacRemember is used to check if a remember token was set then hash it, otherwise return nil
+func (uv *userValidator) hmacRemember(user *User) error {
+	if user.Remember == "" {
+		return nil
+	}
+	user.RememberHash = uv.hmac.Hash(user.Remember)
+	return nil
+}
+
+// setRememberIfUnset is used to check that a remeber token is set on a new user
+func (uv *userValidator) setRememberIfUnset(user *User) error {
+	// If remember is set then return
+	if user.Remember != "" {
+		return nil
+	}
+
+	// Set a remember token
+	token, err := rand.RememberToken()
+	if err != nil {
+		return err
+	}
+	user.Remember = token
+	return nil
+}
+
+// idGreaterThan is a closure used to check that a users id is greater than the specified value
+func (uv *userValidator) idGreaterThan(n uint) userValFn {
+	return userValFn(func(user *User) error {
+		if user.ID <= n {
+			return ErrIDInvalid
+		}
+		return nil
+	})
+}
+
+// normalizeEmail is used to validate an email submitted
+// converts the email to all lowercase
+// trims whitespace in the email
+func (uv *userValidator) normalizeEmail(user *User) error {
+	user.Email = strings.ToLower(user.Email)
+	user.Email = strings.TrimSpace(user.Email)
+	return nil
+}
+
+// requireEmail is used to validate that an email is set
+func (uv *userValidator) requireEmail(user *User) error {
+	if user.Email == "" {
+		return ErrEmailRequired
+	}
+	return nil
+}
+
+// emailFormat is used to validate that an email is of the required format
+func (uv *userValidator) emailFormat(user *User) error {
+	if user.Email == "" {
+		return nil
+	}
+	if !uv.emailRegex.MatchString(user.Email) {
+		return ErrEmailInvalid
+	}
+	return nil
+}
+
+// emailIsAvail is used to validate if an email adress is available
+func (uv *userValidator) emailIsAvail(user *User) error {
+	// Check if the email exists in the db
+	existing, err := uv.ByEmail(user.Email)
+	// Email was not found then it is available
+	if err == ErrNotFound {
+		return nil
+	}
+	// Check for other errors with the db query
+	if err != nil {
+		return err
+	}
+	// If email was found compare id of users to check if they're the same
+	if user.ID != existing.ID {
+		return ErrEmailTaken
+	}
+	return nil
+}
+
+// passwordMinLength is used to validate if a password meets the minimum length
+func (uv *userValidator) passwordMinLength(user *User) error {
+	if user.Password == "" {
+		return nil
+	}
+	if len(user.Password) < 8 {
+		return ErrPasswordTooShort
+	}
+	return nil
+}
+
+// passwordRequired is used to a validate that a password is provided
+func (uv *userValidator) passwordRequired(user *User) error {
+	if user.Password == "" {
+		return ErrPasswordRequired
+	}
+	return nil
+}
+
+// passwordHashRequried is used to validate that a password is hashed
+func (uv *userValidator) passwordHashRequried(user *User) error {
+	if user.PasswordHash == "" {
+		return ErrPasswordRequired
+	}
+	return nil
+}
+
+// rememberMinBytes is used to validate that a remember token is at least 32 bytes long
+func (uv *userValidator) rememberMinBytes(user *User) error {
+	if user.Remember == "" {
+		return nil
+	}
+	n, err := rand.NBytes(user.Remember)
+	if err != nil {
+		return err
+	}
+	if n < 32 {
+		return ErrRememberTooShort
+	}
+	return nil
+}
+
+// rememberHashRequired is used to validate that a remember token hash is always set
+func (uv *userValidator) rememberHashRequired(user *User) error {
+	if user.RememberHash == "" {
+		return ErrRememberRequired
+	}
+	return nil
 }
