@@ -13,7 +13,6 @@ userGorm is a struct that is used for interacting directly with the database.
 */
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -28,27 +27,43 @@ import (
 
 var (
 	// ErrNotFound is returned when a resource cannot be found in the database
-	ErrNotFound = errors.New("models: resource not found")
+	ErrNotFound modelError = "models: resource not found"
 	// ErrIDInvalid is returned whan an invalid ID is passed to a method
-	ErrIDInvalid = errors.New("models: ID provided was invalid")
+	ErrIDInvalid modelError = "models: ID provided was invalid"
 	// ErrPasswordIncorrect is returned when an invalid password is used when attempting to authenticate a user
-	ErrPasswordIncorrect = errors.New("models: incorrect password provided")
+	ErrPasswordIncorrect modelError = "models: incorrect password was provided"
 	// ErrEmailRequired is returned when an email address is not provided when creating a user
-	ErrEmailRequired = errors.New("models: email address is required")
+	ErrEmailRequired modelError = "models: email address is required"
 	// ErrEmailInvalid is returned when an email address does not match requirements
-	ErrEmailInvalid = errors.New("models: email address is not valid")
+	ErrEmailInvalid modelError = "models: email address provided is invalid"
 	// ErrEmailTaken is returned when an update or create is attempted on an email that already exists
-	ErrEmailTaken = errors.New("models: email addess is already taken")
+	ErrEmailTaken modelError = "models: email address is already taken"
 	// ErrPasswordTooShort is returned when a password doesn't meet a minimum length
-	ErrPasswordTooShort = errors.New("models: password must be at least 8 character long")
+	ErrPasswordTooShort modelError = "models: password must be at least 8 characters long"
 	// ErrPasswordRequired is returned whan a create is attempted without a user password provided
-	ErrPasswordRequired = errors.New("models: password is required")
+	ErrPasswordRequired modelError = "models: password is required"
 
 	// ErrRememberRequired is returned when a create or update is attemepted without a user remeber token hash
-	ErrRememberRequired = errors.New("models: remember token is required")
+	ErrRememberRequired modelError = "models: remember token is required"
 	// ErrRememberTooShort is returned when a remember token is not at least 32 bytes
-	ErrRememberTooShort = errors.New("models: remember token must be at least 32 bytes")
+	ErrRememberTooShort modelError = "models: remember token must be at least 32 bytes"
 )
+
+//
+type modelError string
+
+func (e modelError) Error() string {
+	return string(e)
+}
+
+func (e modelError) Public() string {
+	// format model error strings for the public
+	s := strings.Replace(string(e), "models: ", "", 1)
+	split := strings.Split(s, " ")
+	split[0] = strings.Title(split[0])
+	return strings.Join(split, " ")
+
+}
 
 // Get the hmacSecretKey from env
 var hmacSecretKey = os.Getenv("SECRETHMACKEY")

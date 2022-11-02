@@ -41,8 +41,7 @@ func NewUsers(us models.UserService) *Users {
 // New is used to render the form where a user can create a new account.
 // GET /signup
 func (u *Users) New(w http.ResponseWriter, r *http.Request) {
-	err := u.NewView.Render(w, nil)
-	if err != nil {
+	if err := u.NewView.Render(w, nil); err != nil {
 		panic(err)
 	}
 }
@@ -50,10 +49,13 @@ func (u *Users) New(w http.ResponseWriter, r *http.Request) {
 // Create is used to create a new user account.
 // POST /signup
 func (u *Users) Create(w http.ResponseWriter, r *http.Request) {
-
+	var vd views.Data
 	var form SignupForm
+
 	if err := parseForm(r, &form); err != nil {
-		log.Fatal(err)
+		vd.SetAlert(err)
+		u.NewView.Render(w, vd)
+		return
 	}
 
 	user := models.User{
@@ -64,14 +66,15 @@ func (u *Users) Create(w http.ResponseWriter, r *http.Request) {
 
 	// Create the user in the db
 	if err := u.us.Create(&user); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		vd.SetAlert(err)
+		u.NewView.Render(w, vd)
 		return
 	}
 
 	// Sign in the user
 	err := u.signIn(w, &user)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Redirect(w, r, "/login", http.StatusFound)
 		return
 	}
 

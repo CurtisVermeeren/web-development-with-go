@@ -25,6 +25,15 @@ type View struct {
 // The data interface is passed through to the template
 func (v *View) Render(w http.ResponseWriter, data interface{}) error {
 	w.Header().Set("Content-Type", "text/html")
+	// Ensure the data send to the template is wrapped in the Data struct
+	switch data.(type) {
+	case Data:
+	// do nothing
+	default:
+		data = Data{
+			Yield: data,
+		}
+	}
 	return v.Template.ExecuteTemplate(w, v.Layout, data)
 }
 
