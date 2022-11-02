@@ -1,7 +1,9 @@
 package views
 
 import (
+	"bytes"
 	"html/template"
+	"io"
 	"net/http"
 	"path/filepath"
 )
@@ -23,26 +25,32 @@ type View struct {
 
 // Render is used to execute a template of a View object
 // The data interface is passed through to the template
-func (v *View) Render(w http.ResponseWriter, data interface{}) error {
+func (v *View) Render(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "text/html")
-	// Ensure the data send to the template is wrapped in the Data struct
+	// Ensure the data sent to the template is wrapped in the Data struct
 	switch data.(type) {
 	case Data:
-	// do nothing
+	// do nothing. It is already Data
 	default:
 		data = Data{
 			Yield: data,
 		}
 	}
-	return v.Template.ExecuteTemplate(w, v.Layout, data)
+
+	// Attempt to write the template to a buffer instead of directly to ResponseWriter
+	// This will prevent status 200 being written in the Response before all errors are checked
+	var buf bytes.Buffer
+	err := v.Template.ExecuteTemplate(&buf, v.Layout, data)
+	if err != nil {
+		http.Error(w, "Something went wrong. If the problem persists, please contact support.", http.StatusInternalServerError)
+	}
+	// Copy the buffer to the ResponseWriter if no errors occur
+	io.Copy(w, &buf)
 }
 
 // ServeHTTP is used to call Handle on a view object
 func (v *View) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	err := v.Render(w, nil)
-	if err != nil {
-		panic(err)
-	}
+	v.Render(w, nil)
 }
 
 // layoutFiles globs all layout templates and returns an array of template name strings

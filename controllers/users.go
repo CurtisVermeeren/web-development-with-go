@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/curtisvermeeren/web-development-with-go/models"
@@ -41,9 +40,7 @@ func NewUsers(us models.UserService) *Users {
 // New is used to render the form where a user can create a new account.
 // GET /signup
 func (u *Users) New(w http.ResponseWriter, r *http.Request) {
-	if err := u.NewView.Render(w, nil); err != nil {
-		panic(err)
-	}
+	u.NewView.Render(w, nil)
 }
 
 // Create is used to create a new user account.
@@ -84,10 +81,13 @@ func (u *Users) Create(w http.ResponseWriter, r *http.Request) {
 // Login is used to process the login form when a user attempts to use an existing user
 // POST /login
 func (u *Users) Login(w http.ResponseWriter, r *http.Request) {
+	var vd views.Data
 	// pasre login form
 	form := LoginForm{}
 	if err := parseForm(r, &form); err != nil {
-		log.Fatal(err)
+		vd.SetAlert(err)
+		u.LoginView.Render(w, vd)
+		return
 	}
 
 	// Attempt to authenticate a user with provided credentials
@@ -95,21 +95,19 @@ func (u *Users) Login(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch err {
 		case models.ErrNotFound:
-			fmt.Fprintln(w, "Invalid email address.")
-		case models.ErrPasswordIncorrect:
-			fmt.Fprintln(w, "Invalid password provided")
-		case nil:
-			fmt.Fprintln(w, user)
+			vd.AlertError("No user exists with that email address")
 		default:
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			vd.SetAlert(err)
 		}
+		u.LoginView.Render(w, vd)
 		return
 	}
 
 	// Sign in the user
 	err = u.signIn(w, user)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		vd.SetAlert(err)
+		u.LoginView.Render(w, vd)
 		return
 	}
 	http.Redirect(w, r, "/cookietest", http.StatusFound)
@@ -129,7 +127,6 @@ func (u *Users) signIn(w http.ResponseWriter, user *models.User) error {
 			return err
 		}
 	}
-
 	cookie := http.Cookie{
 		Name:     "remember_token",
 		Value:    user.Remember,
