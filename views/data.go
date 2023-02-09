@@ -1,10 +1,15 @@
 package views
 
-import "log"
+import (
+	"log"
+
+	"github.com/curtisvermeeren/web-development-with-go/models"
+)
 
 // Data is a top level structure that is used to send data to views
 type Data struct {
 	Alert *Alert
+	User  *models.User
 	Yield interface{}
 }
 

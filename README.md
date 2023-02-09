@@ -14,3 +14,5 @@ Edit `database.env.TEMPLATE` to add your desired username, password, and databas
 Gorm will be used for database management and data mapping. The User table is AutoMigrated using the UserService.
 
 `userService.DestructiveReset()` can be called from the main method to reset the database for development.
+
+BOOKMARK --- 577

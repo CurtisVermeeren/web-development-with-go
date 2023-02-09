@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/curtisvermeeren/web-development-with-go/controllers"
+	"github.com/curtisvermeeren/web-development-with-go/middleware"
 	"github.com/curtisvermeeren/web-development-with-go/models"
 	"github.com/gorilla/mux"
 )
@@ -25,24 +26,39 @@ func main() {
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
 
 	// User service
-	userService, err := models.NewUserService(psqlInfo)
+	services, err := models.NewServices(psqlInfo)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer userService.Close()
+	defer services.Close()
 
 	// Used to reset the DB in development
-	// userService.DestructiveReset()
+	// services.DestructiveReset()
 
 	// Create the database schema
-	userService.AutoMigrate()
+	services.AutoMigrate()
 
 	// Create a new router
 	router := mux.NewRouter()
 
 	// Setup Controlelrs
 	staticController := controllers.NewStatic()
-	usersController := controllers.NewUsers(userService)
+	usersController := controllers.NewUsers(services.User)
+	galleriesController := controllers.NewGalleries(services.Gallery, router)
+
+	// Setup middleware
+	userMw := middleware.User{
+		UserService: services.User,
+	}
+
+	requireUserMw := middleware.RequireUser{}
+
+	// Apply middleware
+	createGallery := requireUserMw.ApplyFn(galleriesController.Create)
+	editGallery := requireUserMw.ApplyFn(galleriesController.Edit)
+	updateGallery := requireUserMw.ApplyFn(galleriesController.Update)
+	deleteGallery := requireUserMw.ApplyFn(galleriesController.Delete)
+	indexGallery := requireUserMw.ApplyFn(galleriesController.Index)
 
 	// Page routes
 	router.Handle("/", staticController.Home).Methods("GET")
@@ -55,9 +71,18 @@ func main() {
 	// Login routes
 	router.Handle("/login", usersController.LoginView).Methods("GET")
 	router.HandleFunc("/login", usersController.Login).Methods("POST")
+	// Gallery routes
+	router.Handle("/galleries/new", galleriesController.New).Methods("GET")
+	router.HandleFunc("/galleries", createGallery).Methods("POST")
+	router.HandleFunc("/galleries/{id:[0-9]+}", galleriesController.Show).Methods("GET").Name(controllers.ShowGallery)
+	router.HandleFunc("/galleries/{id:[0-9]+}/edit", editGallery).Methods("GET").Name(controllers.EditGallery)
+	router.HandleFunc("/galleries/{id:[0-9]+}/update", updateGallery).Methods("POST")
+	router.HandleFunc("/galleries/{id:[0-9]+}/delete", deleteGallery).Methods("POST")
+	router.Handle("/galleries", indexGallery).Methods("GET").Name(controllers.IndexGalleries)
 
 	router.NotFoundHandler = staticController.Home
 
-	http.ListenAndServe(":3000", router)
+	fmt.Println("Listening on port 8080")
+	http.ListenAndServe(":8080", userMw.Apply(router))
 
 }

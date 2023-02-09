@@ -2,10 +2,13 @@ package views
 
 import (
 	"bytes"
+	"fmt"
 	"html/template"
 	"io"
 	"net/http"
 	"path/filepath"
+
+	"github.com/curtisvermeeren/web-development-with-go/context"
 )
 
 var (
@@ -25,22 +28,25 @@ type View struct {
 
 // Render is used to execute a template of a View object
 // The data interface is passed through to the template
-func (v *View) Render(w http.ResponseWriter, data interface{}) {
+func (v *View) Render(w http.ResponseWriter, r *http.Request, data interface{}) {
 	w.Header().Set("Content-Type", "text/html")
+	var vd Data
 	// Ensure the data sent to the template is wrapped in the Data struct
-	switch data.(type) {
+	switch d := data.(type) {
 	case Data:
-	// do nothing. It is already Data
+		vd = d
 	default:
-		data = Data{
+		vd = Data{
 			Yield: data,
 		}
 	}
 
+	vd.User = context.User(r.Context())
+	fmt.Println(vd.User)
 	// Attempt to write the template to a buffer instead of directly to ResponseWriter
 	// This will prevent status 200 being written in the Response before all errors are checked
 	var buf bytes.Buffer
-	err := v.Template.ExecuteTemplate(&buf, v.Layout, data)
+	err := v.Template.ExecuteTemplate(&buf, v.Layout, vd)
 	if err != nil {
 		http.Error(w, "Something went wrong. If the problem persists, please contact support.", http.StatusInternalServerError)
 	}
@@ -50,7 +56,7 @@ func (v *View) Render(w http.ResponseWriter, data interface{}) {
 
 // ServeHTTP is used to call Handle on a view object
 func (v *View) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	v.Render(w, nil)
+	v.Render(w, r, nil)
 }
 
 // layoutFiles globs all layout templates and returns an array of template name strings

@@ -10,17 +10,23 @@ services:
       - .:/app:cached
     ports:
       - 8080:8080
+    networks:
+      - internal
     command: /bin/sh -c "while sleep 1000; do :; done"
   db:
     image: postgres:14.3-alpine
-    restart: always
     env_file:
       - database.env # Configure postgres
     ports:
      - '5432:5432'
+    networks:
+      - internal
     volumes: 
       - database-data:/var/lib/postgresql/data
 
 volumes:
   database-data: # Named volume 
     
+networks:
+    internal:
+        driver: bridge

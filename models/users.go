@@ -13,7 +13,6 @@ userGorm is a struct that is used for interacting directly with the database.
 */
 
 import (
-	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -49,7 +48,6 @@ var (
 	ErrRememberTooShort modelError = "models: remember token must be at least 32 bytes"
 )
 
-//
 type modelError string
 
 func (e modelError) Error() string {
@@ -82,17 +80,14 @@ type userService struct {
 	UserDB
 }
 
-// NewUserService creates a UserServiceObject using a database connectionInfo string
-func NewUserService(connectionInfo string) (UserService, error) {
-	ug, err := newUserGorm(connectionInfo)
-	if err != nil {
-		return nil, err
-	}
+// NewUserService creates a UserService object from a gorm.Db db connection
+func NewUserService(db *gorm.DB) UserService {
+	ug := &userGorm{db}
 	hmac := hash.NewHMAC(hmacSecretKey)
 	uv := newUserValidator(ug, hmac)
 	return &userService{
 		UserDB: uv,
-	}, nil
+	}
 }
 
 type User struct {
@@ -116,34 +111,11 @@ type UserDB interface {
 	Create(user *User) error
 	Update(user *User) error
 	Delete(id uint) error
-
-	// Used to close a db connection
-	Close() error
-
-	// Database migration helpers
-	AutoMigrate() error
-	DestructiveReset() error
 }
 
 // userGorm represents the database interaction layer
 type userGorm struct {
 	db *gorm.DB
-}
-
-// newUserGorm creates a new gorm layer
-func newUserGorm(connectionInfo string) (*userGorm, error) {
-	db, err := gorm.Open("postgres", connectionInfo)
-	if err != nil {
-		return nil, fmt.Errorf("cannot create UserService: %w", err)
-	}
-
-	// Enable Gorm logging to show statments used
-	db.LogMode(true)
-
-	// Return new UserService
-	return &userGorm{
-		db: db,
-	}, nil
 }
 
 // userValidator represents the data validation and normalization layer
@@ -231,11 +203,6 @@ func (ug *userGorm) ByRemember(rememberHash string) (*User, error) {
 	return &user, nil
 }
 
-// Close is used to close the database connection of a UserService
-func (ug *userGorm) Close() error {
-	return ug.db.Close()
-}
-
 // Create will create the provided user
 func (uv *userValidator) Create(user *User) error {
 
@@ -311,23 +278,6 @@ func (ug *userGorm) Delete(id uint) error {
 	// Create a user with the id matching the one to be deleted
 	user := User{Model: gorm.Model{ID: id}}
 	return ug.db.Delete(&user).Error
-}
-
-// DestructiveReset drops the user table and rebuilds it
-func (ug *userGorm) DestructiveReset() error {
-	err := ug.db.DropTableIfExists(&User{}).Error
-	if err != nil {
-		return err
-	}
-	return ug.AutoMigrate()
-}
-
-// AutoMigrate is used to attempt to automatically migrate the user table
-func (ug *userGorm) AutoMigrate() error {
-	if err := ug.db.AutoMigrate(&User{}).Error; err != nil {
-		return err
-	}
-	return nil
 }
 
 // first is used to query the provided gorm.DB and return the first item in dst
