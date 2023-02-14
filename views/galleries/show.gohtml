@@ -4,7 +4,29 @@
         <h1>
             {{.Title}}
         </h1>
-        <p>Images coming soon...</p>
+        {{template "galleryImages" .}}
     </div>
 </div>
+{{end}}
+
+{{define "galleryImages"}}
+{{range .ImagesSplitN 6}}
+<div class="col-md-2">
+    {{range .}}
+    <a href="{{.Path}}">
+        <img src="{{.Path}}" class="thumbnail">
+    </a>
+    {{end}}
+</div>
+{{end}}
+<style>
+    .thumbnail {
+        width: 100%;
+        margin-bottom: 6px;
+    }
+
+    .btn-delete {
+        margin-bottom: 6px;
+    }
+</style>
 {{end}}

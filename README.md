@@ -15,4 +15,7 @@ Gorm will be used for database management and data mapping. The User table is Au
 
 `userService.DestructiveReset()` can be called from the main method to reset the database for development.
 
-BOOKMARK --- 577
+### Images
+Images uploaded to a gallery are stored in the server filesystem. The `images/` directory contains ids of all galleriers and their images. 
+
+BOOKMARK --- 627

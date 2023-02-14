@@ -44,7 +44,7 @@ func main() {
 	// Setup Controlelrs
 	staticController := controllers.NewStatic()
 	usersController := controllers.NewUsers(services.User)
-	galleriesController := controllers.NewGalleries(services.Gallery, router)
+	galleriesController := controllers.NewGalleries(services.Gallery, services.Image, router)
 
 	// Setup middleware
 	userMw := middleware.User{
@@ -59,6 +59,12 @@ func main() {
 	updateGallery := requireUserMw.ApplyFn(galleriesController.Update)
 	deleteGallery := requireUserMw.ApplyFn(galleriesController.Delete)
 	indexGallery := requireUserMw.ApplyFn(galleriesController.Index)
+	uploadGallery := requireUserMw.ApplyFn(galleriesController.ImageUpload)
+	deleteImage := requireUserMw.ApplyFn(galleriesController.ImageDelete)
+
+	// Image routes
+	imageHandler := http.FileServer(http.Dir("./images/"))
+	router.PathPrefix("/images/").Handler(http.StripPrefix("/images/", imageHandler))
 
 	// Page routes
 	router.Handle("/", staticController.Home).Methods("GET")
@@ -79,6 +85,8 @@ func main() {
 	router.HandleFunc("/galleries/{id:[0-9]+}/update", updateGallery).Methods("POST")
 	router.HandleFunc("/galleries/{id:[0-9]+}/delete", deleteGallery).Methods("POST")
 	router.Handle("/galleries", indexGallery).Methods("GET").Name(controllers.IndexGalleries)
+	router.HandleFunc("/galleries/{id:[0-9]+}/images", uploadGallery).Methods("POST")
+	router.HandleFunc("/galleries/{id:[0-9]+}/images/{filename}/delete", deleteImage).Methods("POST")
 
 	router.NotFoundHandler = staticController.Home
 

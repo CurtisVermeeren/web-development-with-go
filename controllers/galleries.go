@@ -15,6 +15,8 @@ const (
 	ShowGallery    = "show_gallery"
 	IndexGalleries = "index_galleries"
 	EditGallery    = "edit_gallery"
+
+	maxMultipartMem = 1 << 20 // 1 megabyte
 )
 
 type Galleries struct {
@@ -23,16 +25,18 @@ type Galleries struct {
 	EditView  *views.View
 	IndexView *views.View
 	gs        models.GalleryService
+	is        models.ImageService
 	r         *mux.Router
 }
 
-func NewGalleries(gs models.GalleryService, r *mux.Router) *Galleries {
+func NewGalleries(gs models.GalleryService, is models.ImageService, r *mux.Router) *Galleries {
 	return &Galleries{
 		New:       views.NewView("bootstrap", "galleries/new"),
 		ShowView:  views.NewView("bootstrap", "galleries/show"),
 		EditView:  views.NewView("bootstrap", "galleries/edit"),
 		IndexView: views.NewView("bootstrap", "galleries/index"),
 		gs:        gs,
+		is:        is,
 		r:         r,
 	}
 
@@ -178,6 +182,89 @@ func (g *Galleries) Index(w http.ResponseWriter, r *http.Request) {
 	g.IndexView.Render(w, r, vd)
 }
 
+// POST /galleries/:id/images
+func (g *Galleries) ImageUpload(w http.ResponseWriter, r *http.Request) {
+	gallery, err := g.galleryById(w, r)
+	if err != nil {
+		return
+	}
+
+	user := context.User(r.Context())
+	if gallery.UserID != user.ID {
+		http.Error(w, "Gallery not found", http.StatusNotFound)
+		return
+	}
+
+	var vd views.Data
+	vd.Yield = gallery
+	err = r.ParseMultipartForm(maxMultipartMem)
+	if err != nil {
+		vd.SetAlert(err)
+		g.EditView.Render(w, r, vd)
+		return
+	}
+
+	files := r.MultipartForm.File["images"]
+	for _, f := range files {
+		file, err := f.Open()
+		if err != nil {
+			vd.SetAlert(err)
+			g.EditView.Render(w, r, vd)
+			return
+		}
+		defer file.Close()
+
+		err = g.is.Create(gallery.ID, file, f.Filename)
+		if err != nil {
+			vd.SetAlert(err)
+			g.EditView.Render(w, r, vd)
+			return
+		}
+	}
+
+	vd.Alert = &views.Alert{
+		Level:   views.AlertLvlSuccess,
+		Message: "Images successfully uploaded",
+	}
+	g.EditView.Render(w, r, vd)
+}
+
+// POST /galleries/:id/images/:filename/delete
+func (g *Galleries) ImageDelete(w http.ResponseWriter, r *http.Request) {
+	gallery, err := g.galleryById(w, r)
+	if err != nil {
+		return
+	}
+	user := context.User(r.Context())
+	if gallery.UserID != user.ID {
+		http.Error(w, "You do not have permission to edit this gallery or image", http.StatusForbidden)
+		return
+	}
+
+	filename := mux.Vars(r)["filename"]
+	i := models.Image{
+		Filename:  filename,
+		GalleryID: gallery.ID,
+	}
+
+	err = g.is.Delete(&i)
+	if err != nil {
+		var vd views.Data
+		vd.Yield = gallery
+		vd.SetAlert(err)
+		g.EditView.Render(w, r, vd)
+		return
+	}
+
+	url, err := g.r.Get(EditGallery).URL("id", fmt.Sprintf("%v", gallery.ID))
+	if err != nil {
+		http.Redirect(w, r, "/galleries", http.StatusFound)
+		return
+	}
+
+	http.Redirect(w, r, url.Path, http.StatusFound)
+}
+
 func (g *Galleries) galleryById(w http.ResponseWriter, r *http.Request) (*models.Gallery, error) {
 	vars := mux.Vars(r)
 	idString := vars["id"]
@@ -196,6 +283,9 @@ func (g *Galleries) galleryById(w http.ResponseWriter, r *http.Request) (*models
 		}
 		return nil, err
 	}
+
+	images, _ := g.is.ByGalleryID(gallery.ID)
+	gallery.Images = images
 
 	return gallery, nil
 }
