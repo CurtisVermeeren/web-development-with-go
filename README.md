@@ -18,4 +18,4 @@ Gorm will be used for database management and data mapping. The User table is Au
 ### Images
 Images uploaded to a gallery are stored in the server filesystem. The `images/` directory contains ids of all galleriers and their images. 
 
-BOOKMARK --- 627
+BOOKMARK --- 695

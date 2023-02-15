@@ -2,13 +2,15 @@ package views
 
 import (
 	"bytes"
-	"fmt"
+	"errors"
 	"html/template"
 	"io"
 	"net/http"
+	"net/url"
 	"path/filepath"
 
 	"github.com/curtisvermeeren/web-development-with-go/context"
+	"github.com/gorilla/csrf"
 )
 
 var (
@@ -42,11 +44,18 @@ func (v *View) Render(w http.ResponseWriter, r *http.Request, data interface{}) 
 	}
 
 	vd.User = context.User(r.Context())
-	fmt.Println(vd.User)
 	// Attempt to write the template to a buffer instead of directly to ResponseWriter
 	// This will prevent status 200 being written in the Response before all errors are checked
 	var buf bytes.Buffer
-	err := v.Template.ExecuteTemplate(&buf, v.Layout, vd)
+
+	csrfField := csrf.TemplateField(r)
+	tpl := v.Template.Funcs(template.FuncMap{
+		"csrfField": func() template.HTML {
+			return csrfField
+		},
+	})
+
+	err := tpl.ExecuteTemplate(&buf, v.Layout, vd)
 	if err != nil {
 		http.Error(w, "Something went wrong. If the problem persists, please contact support.", http.StatusInternalServerError)
 	}
@@ -91,7 +100,14 @@ func NewView(layout string, files ...string) *View {
 	// Add the footer and layout to each template file
 	files = append(files, layoutFiles()...)
 
-	t, err := template.ParseFiles(files...)
+	t, err := template.New("").Funcs(template.FuncMap{
+		"csrfField": func() (template.HTML, error) {
+			return "", errors.New("csrfField is not implemented")
+		},
+		"pathEscape": func(s string) string {
+			return url.PathEscape(s)
+		},
+	}).ParseFiles(files...)
 	if err != nil {
 		panic(err)
 	}

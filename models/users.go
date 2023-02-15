@@ -13,7 +13,6 @@ userGorm is a struct that is used for interacting directly with the database.
 */
 
 import (
-	"os"
 	"regexp"
 	"strings"
 
@@ -63,12 +62,6 @@ func (e modelError) Public() string {
 
 }
 
-// Get the hmacSecretKey from env
-var hmacSecretKey = os.Getenv("SECRETHMACKEY")
-
-// Password pepper for the application
-var userPasswordPepper = os.Getenv("PASSWORDPEPPER")
-
 // UserService is a set of methods used to manipulate and work with the user model
 type UserService interface {
 	Authenticate(email, password string) (*User, error)
@@ -78,13 +71,14 @@ type UserService interface {
 // UserService is used as an abstraction layer to the database
 type userService struct {
 	UserDB
+	pepper string
 }
 
 // NewUserService creates a UserService object from a gorm.Db db connection
-func NewUserService(db *gorm.DB) UserService {
+func NewUserService(db *gorm.DB, pepper, hmacKey string) UserService {
 	ug := &userGorm{db}
-	hmac := hash.NewHMAC(hmacSecretKey)
-	uv := newUserValidator(ug, hmac)
+	hmac := hash.NewHMAC(hmacKey)
+	uv := newUserValidator(ug, hmac, pepper)
 	return &userService{
 		UserDB: uv,
 	}
@@ -123,14 +117,16 @@ type userValidator struct {
 	UserDB
 	hmac       hash.HMAC
 	emailRegex *regexp.Regexp
+	pepper     string
 }
 
 // newUserValidator returns a userValidator object
-func newUserValidator(udb UserDB, hmac hash.HMAC) *userValidator {
+func newUserValidator(udb UserDB, hmac hash.HMAC, pepper string) *userValidator {
 	return &userValidator{
 		UserDB:     udb,
 		hmac:       hmac,
 		emailRegex: regexp.MustCompile(`^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,16}$`),
+		pepper:     pepper,
 	}
 }
 
@@ -306,7 +302,7 @@ func (us *userService) Authenticate(email, password string) (*User, error) {
 	// Compare the users hashed password to the provided password
 	err = bcrypt.CompareHashAndPassword(
 		[]byte(foundUser.PasswordHash),
-		[]byte(password+userPasswordPepper),
+		[]byte(password+us.pepper),
 	)
 
 	// Check for errors when comparing passwords
@@ -340,7 +336,7 @@ func (uv *userValidator) bcryptPassword(user *User) error {
 	}
 
 	// Hash the users password with bcrypt
-	pwBytes := []byte(user.Password + userPasswordPepper)
+	pwBytes := []byte(user.Password + uv.pepper)
 	hashedBytes, err := bcrypt.GenerateFromPassword(pwBytes, bcrypt.DefaultCost)
 	if err != nil {
 		return err

@@ -4,29 +4,29 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/curtisvermeeren/web-development-with-go/controllers"
 	"github.com/curtisvermeeren/web-development-with-go/middleware"
 	"github.com/curtisvermeeren/web-development-with-go/models"
+	"github.com/curtisvermeeren/web-development-with-go/rand"
+	"github.com/gorilla/csrf"
 	"github.com/gorilla/mux"
 )
 
 func NotFound(w http.ResponseWriter, r *http.Request) {}
 
 func main() {
-
-	// Database setup
-	host := "host.docker.internal"
-	port := 5432
-	user := os.Getenv("POSTGRES_USER")
-	password := os.Getenv("POSTGRES_PASSWORD")
-	dbname := os.Getenv("POSTGRES_DB")
-
-	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
+	config := LoadConfig()
+	dbConfig := config.Database
 
 	// User service
-	services, err := models.NewServices(psqlInfo)
+	services, err := models.NewServices(
+		models.WithGorm(dbConfig.Dialect(), dbConfig.ConnectionInfo()),
+		models.WithLogMode(!config.IsProd()),
+		models.WithUser(config.Pepper, config.HMACKey),
+		models.WithGallery(),
+		models.WithImage(),
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -53,6 +53,13 @@ func main() {
 
 	requireUserMw := middleware.RequireUser{}
 
+	// Setup CSRF middleware supplied by gorilla/csrf package
+	b, err := rand.Bytes(32)
+	if err != nil {
+		panic(err)
+	}
+	csrfMw := csrf.Protect(b, csrf.Secure(config.IsProd()))
+
 	// Apply middleware
 	createGallery := requireUserMw.ApplyFn(galleriesController.Create)
 	editGallery := requireUserMw.ApplyFn(galleriesController.Edit)
@@ -65,6 +72,11 @@ func main() {
 	// Image routes
 	imageHandler := http.FileServer(http.Dir("./images/"))
 	router.PathPrefix("/images/").Handler(http.StripPrefix("/images/", imageHandler))
+
+	// Assets
+	assetHandler := http.FileServer(http.Dir("./assets/"))
+	assetHandler = http.StripPrefix("/assets/", assetHandler)
+	router.PathPrefix("/assets/").Handler(assetHandler)
 
 	// Page routes
 	router.Handle("/", staticController.Home).Methods("GET")
@@ -90,7 +102,7 @@ func main() {
 
 	router.NotFoundHandler = staticController.Home
 
-	fmt.Println("Listening on port 8080")
-	http.ListenAndServe(":8080", userMw.Apply(router))
+	fmt.Printf("Listening on port :%d\n", config.Port)
+	http.ListenAndServe(fmt.Sprintf(":%d", config.Port), csrfMw(userMw.Apply(router)))
 
 }

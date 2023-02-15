@@ -16,6 +16,7 @@ func parseForm(r *http.Request, destination interface{}) error {
 
 	// Use the gorilla schema package for decoding into a destination interface
 	decoder := schema.NewDecoder()
+	decoder.IgnoreUnknownKeys(true)
 	err = decoder.Decode(destination, r.PostForm)
 	if err != nil {
 		return err
