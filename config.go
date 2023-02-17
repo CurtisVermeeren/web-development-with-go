@@ -78,10 +78,10 @@ func LoadConfig() Config {
 	}
 
 	// Get the hmacSecretKey from env
-	var hmacSecretKey = os.Getenv("SECRETHMACKEY")
+	hmacSecretKey := os.Getenv("SECRETHMACKEY")
 
 	// Password pepper for the application
-	var userPasswordPepper = os.Getenv("PASSWORDPEPPER")
+	userPasswordPepper := os.Getenv("PASSWORDPEPPER")
 
 	config := Config{
 		Port:     8080,

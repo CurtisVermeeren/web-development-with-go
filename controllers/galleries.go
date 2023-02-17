@@ -170,7 +170,6 @@ func (g *Galleries) Delete(w http.ResponseWriter, r *http.Request) {
 
 // GET /galleries
 func (g *Galleries) Index(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Test")
 	user := context.User(r.Context())
 	galleries, err := g.gs.ByUserID(user.ID)
 	if err != nil {

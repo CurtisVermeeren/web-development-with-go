@@ -2,25 +2,30 @@ package controllers
 
 import (
 	"net/http"
+	"net/url"
 
 	"github.com/gorilla/schema"
 )
 
-// parseForm takes an http.Request and parses and data from the form
-// Data parsed is stored in the destination interface
-func parseForm(r *http.Request, destination interface{}) error {
-	err := r.ParseForm()
-	if err != nil {
+func parseForm(r *http.Request, dst interface{}) error {
+	if err := r.ParseForm(); err != nil {
 		return err
 	}
+	return parseValues(r.PostForm, dst)
+}
 
-	// Use the gorilla schema package for decoding into a destination interface
-	decoder := schema.NewDecoder()
-	decoder.IgnoreUnknownKeys(true)
-	err = decoder.Decode(destination, r.PostForm)
-	if err != nil {
+func parseValues(values url.Values, dst interface{}) error {
+	dec := schema.NewDecoder()
+	dec.IgnoreUnknownKeys(true)
+	if err := dec.Decode(dst, values); err != nil {
 		return err
 	}
-
 	return nil
+}
+
+func parseURLParams(r *http.Request, dst interface{}) error {
+	if err := r.ParseForm(); err != nil {
+		return err
+	}
+	return parseValues(r.Form, dst)
 }

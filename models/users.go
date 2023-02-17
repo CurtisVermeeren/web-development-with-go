@@ -81,6 +81,7 @@ func NewUserService(db *gorm.DB, pepper, hmacKey string) UserService {
 	uv := newUserValidator(ug, hmac, pepper)
 	return &userService{
 		UserDB: uv,
+		pepper: pepper,
 	}
 }
 

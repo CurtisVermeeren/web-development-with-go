@@ -3,7 +3,9 @@ package controllers
 import (
 	"fmt"
 	"net/http"
+	"time"
 
+	"github.com/curtisvermeeren/web-development-with-go/context"
 	"github.com/curtisvermeeren/web-development-with-go/models"
 	"github.com/curtisvermeeren/web-development-with-go/rand"
 	"github.com/curtisvermeeren/web-development-with-go/views"
@@ -40,7 +42,9 @@ func NewUsers(us models.UserService) *Users {
 // New is used to render the form where a user can create a new account.
 // GET /signup
 func (u *Users) New(w http.ResponseWriter, r *http.Request) {
-	u.NewView.Render(w, r, nil)
+	var form SignupForm
+	parseURLParams(r, &form)
+	u.NewView.Render(w, r, form)
 }
 
 // Create is used to create a new user account.
@@ -48,6 +52,7 @@ func (u *Users) New(w http.ResponseWriter, r *http.Request) {
 func (u *Users) Create(w http.ResponseWriter, r *http.Request) {
 	var vd views.Data
 	var form SignupForm
+	vd.Yield = &form
 
 	if err := parseForm(r, &form); err != nil {
 		vd.SetAlert(err)
@@ -112,6 +117,23 @@ func (u *Users) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/galleries", http.StatusFound)
+}
+
+// POST /logout
+func (u *Users) Logout(w http.ResponseWriter, r *http.Request) {
+	cookie := http.Cookie{
+		Name:     "remember_token",
+		Value:    "",
+		Expires:  time.Now(),
+		HttpOnly: true,
+	}
+
+	http.SetCookie(w, &cookie)
+	user := context.User(r.Context())
+	token, _ := rand.RememberToken()
+	user.Remember = token
+	u.us.Update(user)
+	http.Redirect(w, r, "/", http.StatusFound)
 }
 
 // signIn is used to sign in the given user via cookies

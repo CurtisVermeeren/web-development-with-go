@@ -68,6 +68,7 @@ func main() {
 	indexGallery := requireUserMw.ApplyFn(galleriesController.Index)
 	uploadGallery := requireUserMw.ApplyFn(galleriesController.ImageUpload)
 	deleteImage := requireUserMw.ApplyFn(galleriesController.ImageDelete)
+	logoutUser := requireUserMw.ApplyFn(usersController.Logout)
 
 	// Image routes
 	imageHandler := http.FileServer(http.Dir("./images/"))
@@ -89,6 +90,7 @@ func main() {
 	// Login routes
 	router.Handle("/login", usersController.LoginView).Methods("GET")
 	router.HandleFunc("/login", usersController.Login).Methods("POST")
+	router.HandleFunc("/logout", logoutUser).Methods("POST")
 	// Gallery routes
 	router.Handle("/galleries/new", galleriesController.New).Methods("GET")
 	router.HandleFunc("/galleries", createGallery).Methods("POST")

@@ -43,6 +43,11 @@ func (v *View) Render(w http.ResponseWriter, r *http.Request, data interface{}) 
 		}
 	}
 
+	if alert := getAlert(r); alert != nil {
+		vd.Alert = alert
+		clearAlert(w)
+	}
+
 	vd.User = context.User(r.Context())
 	// Attempt to write the template to a buffer instead of directly to ResponseWriter
 	// This will prevent status 200 being written in the Response before all errors are checked
